@@ -1,0 +1,6 @@
+../Core/Src/main.c:62:6:vQSPI_WriteTask	16	static
+../Core/Src/main.c:72:6:vTogglePinTask	24	static
+../Core/Src/main.c:91:5:main	16	static
+../Core/Src/main.c:141:6:SystemClock_Config	88	static
+../Core/Src/main.c:190:6:HAL_GPIO_EXTI_Callback	16	static
+../Core/Src/main.c:220:6:Error_Handler	4	static,ignoring_inline_asm
