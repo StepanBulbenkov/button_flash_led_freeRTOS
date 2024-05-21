@@ -21,6 +21,7 @@
 #include "cmsis_os.h"
 #include "quadspi.h"
 #include "gpio.h"
+#include "queue.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +48,7 @@
 /* USER CODE BEGIN PV */
 portTickType xLastWakeTime;
 uint8_t current_max=0, is_pulse=0;
-TaskHandle_t task;
+xQueueHandle queue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,10 +62,11 @@ void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN 0 */
 void vQSPI_WriteTask( void *pvParameters )
 {
+	uint8_t buff;
 	for( ;; )
 	{
-		vTaskSuspend(NULL);
-		QSPI_WRITE_DATA(&hqspi,0,&current_max,1);
+		xQueueReceive(queue,&buff,portMAX_DELAY);
+		QSPI_WRITE_DATA(&hqspi,0,&buff,1);
 	}
 	vTaskDelete(NULL);
 }
@@ -116,12 +118,22 @@ int main(void)
   MX_QUADSPI_Init();
   /* USER CODE BEGIN 2 */
   QSPI_READ_DATA(&hqspi, 0, &(current_max), 1);
-  if(current_max>100) current_max = 100;
-  xTaskCreate(vQSPI_WriteTask, "QSPI", 1000, NULL,9, &task);
-  xTaskCreate(vTogglePinTask, "LED", 100, NULL, 8, NULL);
+  queue = xQueueCreate(1,sizeof(uint8_t));
+  xTaskCreate(vQSPI_WriteTask, "QSPI", 1000, NULL, 2, NULL);
+  xTaskCreate(vTogglePinTask, "LED", 100, NULL, 1, NULL);
   vTaskStartScheduler();
   /* USER CODE END 2 */
 
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -189,6 +201,8 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
+	BaseType_t xHigherPriorityTaskWoken;
+	uint8_t buff;
 	if(!is_pulse)
 	{
 		is_pulse++;
@@ -198,8 +212,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	{
 		is_pulse--;
 		xLastWakeTime = xTaskGetTickCount() - xLastWakeTime;
-		current_max = xLastWakeTime > 5000 ? 100 : xLastWakeTime / 50;
-		xTaskResumeFromISR(task);
+		buff = xLastWakeTime > 5000 ? 100 : xLastWakeTime / 50;
+		if(xQueueSendToFrontFromISR(queue,&buff,&xHigherPriorityTaskWoken) == pdPASS)
+		{
+			current_max = buff;
+		}
+		portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 	}
 }
 /* USER CODE END 4 */
@@ -212,6 +230,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   * @param  htim : TIM handle
   * @retval None
   */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM1) {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
